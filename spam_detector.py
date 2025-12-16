@@ -1,10 +1,12 @@
+import streamlit as st
+import re
+import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score
 from sklearn.utils import shuffle
-import joblib, re
 
 def clean_text(text):
     text = text.lower()
@@ -58,33 +60,36 @@ labels = [
 emails = [clean_text(e) for e in emails]
 emails, labels = shuffle(emails, labels, random_state=42)
 
-x_train, x_test, y_train, y_test = train_test_split(
-    emails, labels, test_size=0.3, random_state=42, stratify=labels
-)
+@st.cache_resource
+def train_model():
+    x_train, x_test, y_train, y_test = train_test_split(
+        emails, labels, test_size=0.3, random_state=42, stratify=labels
+    )
 
-pipeline = Pipeline([
-    ('tfidf', TfidfVectorizer(ngram_range=(1,2))),
-    ('clf', MultinomialNB())
-])
+    pipeline = Pipeline([
+        ('tfidf', TfidfVectorizer(ngram_range=(1,2))),
+        ('clf', MultinomialNB())
+    ])
 
-pipeline.fit(x_train, y_train)
+    pipeline.fit(x_train, y_train)
+    acc = accuracy_score(y_test, pipeline.predict(x_test))
+    joblib.dump(pipeline, "spam_model.joblib")
+    return pipeline, acc
 
-y_pred = pipeline.predict(x_test)
-print("Accuracy:", accuracy_score(y_test, y_pred))
-print("Classification Report:\n", classification_report(y_test, y_pred, zero_division=1))
-print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+model, accuracy = train_model()
 
-joblib.dump(pipeline, "spam_model.joblib")
+st.title("📧 Email Spam Detection")
+st.write(f"Model Accuracy: **{accuracy:.2f}**")
 
-def predict_mail(text):
-    model = joblib.load("spam_model.joblib")
-    text = clean_text(text)
-    pred = model.predict([text])[0]
-    return "Spam" if pred==1 else "Not Spam"
+user_input = st.text_area("Enter email text:")
 
-while True:
-    msg = input("\nEnter an email to check (or type 'exit' to quit): ")
-    if msg.lower() == 'exit':
-        print("Exiting...")
-        break
-    print("Prediction:", predict_mail(msg))
+if st.button("Check Email"):
+    if user_input.strip() == "":
+        st.warning("Please enter some email text")
+    else:
+        cleaned = clean_text(user_input)
+        prediction = model.predict([cleaned])[0]
+        if prediction == 1:
+            st.error("🚨 This Email is SPAM")
+        else:
+            st.success("✅ This Email is NOT SPAM")
